@@ -1,0 +1,15 @@
+version: 0.0
+os: linux
+files:
+  - source: s3://weatherapp-test/nwe-artifacts/2024-11-05_07-40-17/user-service.war
+    destination: /opt/tomcat/webapps/
+hooks:
+  AfterInstall:
+    - location: scripts/install_app.sh
+      timeout: 300
+      runas: root
+  ApplicationStart:
+    - location: scripts/start_app.sh
+      timeout: 300
+      runas: root
+  
