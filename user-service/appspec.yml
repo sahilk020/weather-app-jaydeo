@@ -4,8 +4,18 @@ files:
   - source: s3://weatherapp-test/nwe-artifacts/2024-11-05_07-40-17/user-service.war
     destination: /opt/tomcat/webapps/
 hooks:
+  BeforeInstall:
+    - location: scripts/install_dependencies.sh
+      timeout: 300
+      runas: root
+
   AfterInstall:
     - location: scripts/install_app.sh
+      timeout: 300
+      runas: root
+
+  ApplicationStart:
+    - location: scripts/start_server.sh
       timeout: 300
       runas: root
   
