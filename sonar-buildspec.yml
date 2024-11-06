@@ -1,0 +1,62 @@
+version: 0.2
+ 
+ 
+phases:
+  install:
+    commands:
+      - wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.2.0.1873-linux.zip
+      - unzip sonar-scanner-cli-4.2.0.1873-linux.zip
+      - mv sonar-scanner-4.2.0.1873-linux /opt/sonar-scanner
+      - echo -e "sonar.host.url=http://3.64.228.133:9000 \nsonar.sourceEncoding=UTF-8 \nsonar.qualitygate.wait=true " >> /opt/sonar-scanner/conf/sonar-scanner.properties
+      - echo -e "#/bin/bash \nexport PATH='$PATH:/opt/sonar-scanner/bin'" >> /etc/profile.d/sonar-scanner.sh
+      - source /etc/profile.d/sonar-scanner.sh
+      - pwd
+      - sonar-scanner -v
+      - yum install -y bc
+      
+ 
+  pre_build:
+    commands:
+      - sudo yum install java-17-amazon-corretto -y
+
+      # Register Java 17 as an alternative and set JAVA_HOME correctly
+      - ls /usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java
+      - sudo alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java 1
+      - sudo alternatives --set java /usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java
+      - export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto
+      - export PATH=$JAVA_HOME/bin:$PATH  # Immediate PATH update for this script
+      - echo "export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.x86_64" >> ~/.bashrc
+      - echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> ~/.bashrc
+      - source ~/.bashrc
+
+      # Verify Java installation
+      - java -version || { echo "Java 17 not found!"; exit 1; }
+      - echo Installing Maven
+      - wget https://dlcdn.apache.org/maven/maven-3/3.8.8/binaries/apache-maven-3.8.8-bin.tar.gz
+      - tar -xvf apache-maven-3.8.8-bin.tar.gz
+      - mv apache-maven-3.8.8 /opt/maven
+      - export M2_HOME=/opt/maven
+      - export PATH=$M2_HOME/bin:$PATH
+      - mvn -version
+      - java -version
+ 
+  build:
+    commands:
+      - cd user-service
+      - mvn clean
+      - mvn install
+      - mvn sonar:sonar -Dsonar.projectKey=shield -Dsonar.host.url=http://3.64.228.133:9000 -Dsonar.login=squ_3667cdf5fec38f01fd7ade54a430f93c308283ff
+      - ls -la
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - ls target/*.war
+ 
+artifacts:
+  files:
+    - target/*.war
+reports:
+  jacoco-report:
+    files:
+      - 'target/site/jacoco/jacoco.xml'
+    file-format: 'JACOCOXML'
