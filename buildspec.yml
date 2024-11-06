@@ -1,0 +1,134 @@
+version: 0.2
+
+env:
+  variables:
+    GITLAB_REPO_URL: "https://github.com/sahilk020/weather-app-jaydeo.git"
+    S3_BUCKET: "weatherapp-test"  # Your S3 bucket name
+    AWS_REGION: "eu-central-1"  # Your AWS region
+    DATE_TIME: "default_value"
+
+phases:
+  install:
+    commands:
+      - echo "Installing necessary dependencies"
+      - yum install git -y 
+      - echo "Setting Date and Time"
+      - DATE_TIME=$(TZ='Asia/Kolkata' date +"%Y%m%d_%H%M%S")
+      - export DATE_TIME
+
+  pre_build:
+    commands:
+      - echo "Cloning repository..."
+      - git clone https://github.com/sahilk020/weather-app-jaydeo.git
+      - ls -la
+      - sudo yum install java-17-amazon-corretto -y
+
+      # Register Java 17 as an alternative and set JAVA_HOME correctly
+      - ls /usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java
+      - sudo alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java 1
+      - sudo alternatives --set java /usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java
+      - export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto
+      - export PATH=$JAVA_HOME/bin:$PATH  # Immediate PATH update for this script
+      - echo "export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.x86_64" >> ~/.bashrc
+      - echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> ~/.bashrc
+      - source ~/.bashrc
+
+      # Verify Java installation
+      - java -version || { echo "Java 17 not found!"; exit 1; }
+
+      - echo "Installing Maven 3.8..."
+      - wget "https://dlcdn.apache.org/maven/maven-3/3.8.8/binaries/apache-maven-3.8.8-bin.tar.gz" -O maven.tar.gz
+      - tar -xvf maven.tar.gz
+      - sudo mv apache-maven-3.8.8 /opt/
+      - echo "export M2_HOME=/opt/apache-maven-3.8.8" >> ~/.bashrc
+      - echo "export PATH=\$M2_HOME/bin:\$PATH" >> ~/.bashrc
+      - source ~/.bashrc
+      - mvn -version
+
+      - export DATE_TIME=$(TZ='Asia/Kolkata' date +"%Y-%m-%d %H:%M:%S")
+      - mkdir -p /opt/warfile
+      - echo "Ready to deploy components"
+
+  build:
+    commands:
+      - echo "Building the application for component:$COMPONENT"
+      - |
+        IFS=',' read -ra COMPONENTS <<< "$COMPONENT"
+        for component in "${COMPONENTS[@]}"; do
+          echo "Processing component: $component"
+          
+          # Build logic for user-service
+          if [[ "$component" == "user-service" ]]; then
+            cd user-service
+            mvn clean install
+            mvn test
+            # Debugging to ensure WAR file is generated
+            echo "Listing contents of target directory after mvn install:"
+            ls -la target/
+            if [[ -f target/user-service.war ]]; then
+              echo "WAR file found, copying to /opt/warfile/"
+              cp target/user-service.war /opt/warfile/
+            else
+              echo "user-service.war not found! Exiting."
+              exit 1
+            fi
+
+            elif [[ "$component" == "auth-service" ]]; then
+            cd auth-service
+            mvn clean install
+            mvn clean install -DskipTests
+            # Debugging to ensure WAR file is generated
+            echo "Listing contents of target directory after mvn install:"
+            ls -la target/
+            if [[ -f target/auth-service.war ]]; then
+              echo "WAR file found, copying to /opt/warfile/"
+              cp target/auth-service.war /opt/warfile/
+            else
+              echo "auth-service.war not found! Exiting."
+              exit 1
+            fi
+
+            elif [[ "$component" == "weather-service" ]]; then
+            cd weather-service
+            mvn clean install -DskipTests
+            mvn test
+            # Debugging to ensure WAR file is generated
+            echo "Listing contents of target directory after mvn install:"
+            ls -la target/
+            if [[ -f target/weather-service.war ]]; then
+              echo "WAR file found, copying to /opt/warfile/"
+              cp target/weather-service.war /opt/warfile/
+            else
+              echo "weather-service.war not found! Exiting."
+              exit 1
+            fi
+
+          else
+            echo "Unknown component: $component"
+            exit 1
+          fi
+          echo "Build for $component completed"
+        done
+
+  post_build:
+    commands:
+      - echo "Checking for generated WAR files..."
+      - ls /opt/warfile
+      - echo "Copying WAR files to S3..."
+      - DATE_TIME=$(date +"%Y-%m-%d_%H-%M-%S")
+      - |
+        for dir in /opt/warfile/*; do
+          COMPONENT_NAME=$(basename "$dir")
+          if [[ -f "$dir" && "$dir" == *.war ]]; then
+            echo "Uploading $dir to S3"
+            aws s3 cp "$dir" "s3://$S3_BUCKET/nwe-artifacts/${DATE_TIME}/${COMPONENT_NAME}/"
+          else
+            echo "No WAR file found in /opt/warfile/ or invalid file: $dir"
+          fi
+        done
+
+artifacts:
+  files:
+    - /opt/warfile/**/*.war
+  name: codeBuildArtifacts
+  discard-paths: yes
